@@ -60,14 +60,18 @@ import org.fcitx.fcitx5.android.input.dependency.theme
 import org.fcitx.fcitx5.android.input.editing.TextEditingWindow
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
 import org.fcitx.fcitx5.android.input.keyboard.CustomGestureView
+import org.fcitx.fcitx5.android.input.keyboard.CustomGestureView.GestureType
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
 import org.fcitx.fcitx5.android.input.popup.PopupComponent
 import org.fcitx.fcitx5.android.input.status.StatusAreaWindow
+import org.fcitx.fcitx5.android.input.voice.VoiceFeedbackCollector
 import org.fcitx.fcitx5.android.input.wm.InputWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.AppUtil
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
+import org.fcitx.fcitx5.android.voice.domain.TranscribeState
 import org.mechdancer.dependency.DynamicScope
+import timber.log.Timber
 import org.mechdancer.dependency.manager.must
 import splitties.bitflags.hasFlag
 import splitties.dimensions.dp
@@ -104,8 +108,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private val expandedCandidateStyle by prefs.keyboard.expandedCandidateStyle
     private val expandToolbarByDefault by prefs.keyboard.expandToolbarByDefault
     private val toolbarNumRowOnPassword by prefs.keyboard.toolbarNumRowOnPassword
-    private val showVoiceInputButton by prefs.keyboard.showVoiceInputButton
-    private val preferredVoiceInput by prefs.keyboard.preferredVoiceInput
+    private val showVoiceInputButton by prefs.voice.showVoiceInputButton
+    private val preferredVoiceInput by prefs.voice.preferredVoiceInput
 
     private var clipboardTimeoutJob: Job? = null
 
@@ -269,6 +273,34 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private val switchToVoiceInputCallback = View.OnClickListener {
         val (id, subtype) = voiceInputSubtype ?: return@OnClickListener
         InputMethodUtil.switchInputMethod(service, id, subtype)
+    }
+
+    /**
+     * 语音输入模式的触摸手势监听器。
+     * ACTION_DOWN → 采集上次反馈 + 开始录音
+     * ACTION_UP   → 停止录音并触发转录
+     * ACTION_CANCEL → 取消录音
+     */
+    private val voiceGestureListener = CustomGestureView.OnGestureListener { _, event ->
+        when (event.type) {
+            GestureType.Down -> {
+                Timber.d("VoiceButton DOWN")
+                val feedbackEvent = service.feedbackCollector.checkAndCollect(service.currentInputConnection)
+                if (feedbackEvent != null) {
+                    service.lifecycleScope.launch {
+                        service.feedbackUploader.uploadPending(service.feedbackRepository)
+                    }
+                }
+                service.voiceInputController.startRecording()
+                true
+            }
+            GestureType.Up -> {
+                Timber.d("VoiceButton UP")
+                service.voiceInputController.stopRecording()
+                true
+            }
+            else -> false
+        }
     }
 
     private val idleUi: IdleUi by lazy {
@@ -453,11 +485,22 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         }
         voiceInputSubtype = InputMethodUtil.findVoiceSubtype(preferredVoiceInput)
         val shouldShowVoiceInput =
-            showVoiceInputButton && voiceInputSubtype != null && !capFlags.has(CapabilityFlag.Password)
-        idleUi.setHideKeyboardIsVoiceInput(
-            shouldShowVoiceInput,
-            if (shouldShowVoiceInput) switchToVoiceInputCallback else hideKeyboardCallback
-        )
+            showVoiceInputButton && !capFlags.has(CapabilityFlag.Password)
+        if (shouldShowVoiceInput) {
+            // 语音输入模式：使用触摸手势（按下录音，松手转录）
+            idleUi.setHideKeyboardIsVoiceInput(true, hideKeyboardCallback)
+            idleUi.hideKeyboardButton.apply {
+                setOnClickListener(null)
+                swipeEnabled = false
+                onGestureListener = voiceGestureListener
+            }
+        } else {
+            idleUi.setHideKeyboardIsVoiceInput(false, hideKeyboardCallback)
+            idleUi.hideKeyboardButton.apply {
+                swipeEnabled = true
+                onGestureListener = swipeHideKeyboardCallback
+            }
+        }
         evalIdleUiState()
     }
 
@@ -553,6 +596,43 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     fun onKeyboardLayoutSwitched(isNumber: Boolean) {
         isKeyboardLayoutNumber = isNumber
         evalIdleUiState()
+    }
+
+    /**
+     * 根据语音转录状态更新语音按钮视觉。
+     */
+    fun onVoiceStateChanged(state: TranscribeState) {
+        idleUi.hideKeyboardButton.apply {
+            when (state) {
+                is TranscribeState.Idle,
+                is TranscribeState.Success,
+                is TranscribeState.Error -> {
+                    setIcon(R.drawable.ic_baseline_keyboard_voice_24)
+                    alpha = 1.0f
+                    clearAnimation()
+                }
+                is TranscribeState.Recording -> {
+                    setIcon(R.drawable.ic_baseline_keyboard_voice_24)
+                    alpha = 1.0f
+                    // 录音时红色脉冲提示；使用背景色/着色 API 可由主题决定，
+                    // 这里简单降低透明度做视觉反馈
+                    animate()
+                        .alpha(0.4f)
+                        .setDuration(500L)
+                        .withEndAction {
+                            animate()
+                                .alpha(1.0f)
+                                .setDuration(500L)
+                                .start()
+                        }
+                        .start()
+                }
+                is TranscribeState.Processing -> {
+                    setIcon(R.drawable.ic_baseline_keyboard_voice_24)
+                    alpha = 0.5f
+                }
+            }
+        }
     }
 
 }

@@ -65,6 +65,13 @@ import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.cursor.CursorRange
 import org.fcitx.fcitx5.android.input.cursor.CursorTracker
+import org.fcitx.fcitx5.android.input.voice.FeedbackRepository
+import org.fcitx.fcitx5.android.input.voice.FeedbackUploader
+import org.fcitx.fcitx5.android.input.voice.VoiceFeedbackCollector
+import org.fcitx.fcitx5.android.input.voice.VoiceStyle
+import org.fcitx.fcitx5.android.voice.VoiceInputController
+import org.fcitx.fcitx5.android.voice.domain.CommitTextHandler
+import org.fcitx.fcitx5.android.voice.domain.TranscribeState
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import org.fcitx.fcitx5.android.utils.alpha
 import org.fcitx.fcitx5.android.utils.forceShowSelf
@@ -84,6 +91,15 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     private lateinit var fcitx: FcitxConnection
 
     private var jobs = Channel<Job>(capacity = Channel.UNLIMITED)
+
+    // --- 语音输入 ---
+    val feedbackRepository = FeedbackRepository()
+    val feedbackCollector = VoiceFeedbackCollector(feedbackRepository)
+    val feedbackUploader: FeedbackUploader by lazy {
+        FeedbackUploader(prefs.voice.voiceServerUrl.getValue())
+    }
+    lateinit var voiceInputController: VoiceInputController
+        private set
 
     private val cachedKeyEvents = LruCache<Int, KeyEvent>(78)
     private var cachedKeyEventIndex = 0
@@ -217,6 +233,94 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
         prefs.candidates.registerOnChangeListener(recreateCandidatesViewListener)
         ThemeManager.addOnChangedListener(onThemeChangeListener)
+
+        // --- 初始化语音输入 ---
+        voiceInputController = VoiceInputController(this)
+        voiceInputController.setServerUrl(prefs.voice.voiceServerUrl.getValue())
+
+        fun resolveVoiceStyle(): String {
+            return if (prefs.voice.voiceDefaultStyle.getValue() == VoiceStyle.自定义) {
+                prefs.voice.voiceCustomStyle.getValue().takeIf { it.isNotBlank() } ?: VoiceStyle.自定义.name
+            } else {
+                prefs.voice.voiceDefaultStyle.getValue().name
+            }
+        }
+        voiceInputController.setStyle(resolveVoiceStyle())
+        voiceInputController.setPrompt(prefs.voice.voicePrompt.getValue())
+        voiceInputController.setSample(prefs.voice.voiceSample.getValue())
+
+        // 设置 Fcitx5 上屏处理器
+        voiceInputController.commitTextHandler = object : CommitTextHandler {
+            override fun commitText(text: String) {
+                currentInputConnection?.commitText(text, 1)
+            }
+
+            override fun setComposingText(text: String) {
+                currentInputConnection?.setComposingText(text, 1)
+            }
+
+            override fun clearComposingText() {
+                currentInputConnection?.finishComposingText()
+            }
+        }
+
+        // 设置转录结果监听：记录反馈会话
+        voiceInputController.onResult = { sessionId, originalText, styledText, style, prompt, durationMs ->
+            feedbackCollector.recordSession(
+                sessionId = sessionId,
+                originalText = originalText,
+                styledText = styledText,
+                style = style,
+                prompt = prompt,
+                durationMs = durationMs
+            )
+        }
+
+        // 设置错误监听
+        voiceInputController.onError = { message ->
+            Timber.w("VoiceInput error: $message")
+        }
+
+        // 设置状态变更监听（用于更新语音按钮 UI）
+        voiceInputController.onStateChanged = { state ->
+            Timber.d("VoiceInput state changed: $state")
+            inputView?.onVoiceStateChanged(state)
+        }
+
+        // 监听语音设置变化，动态更新控制器
+        prefs.voice.voiceServerUrl.registerOnChangeListener(object : ManagedPreference.OnChangeListener<String> {
+            @Keep
+            override fun onChange(key: String, value: String) {
+                voiceInputController.setServerUrl(value)
+            }
+        })
+        prefs.voice.voiceDefaultStyle.registerOnChangeListener(object : ManagedPreference.OnChangeListener<VoiceStyle> {
+            @Keep
+            override fun onChange(key: String, value: VoiceStyle) {
+                voiceInputController.setStyle(resolveVoiceStyle())
+            }
+        })
+        prefs.voice.voiceCustomStyle.registerOnChangeListener(object : ManagedPreference.OnChangeListener<String> {
+            @Keep
+            override fun onChange(key: String, value: String) {
+                if (prefs.voice.voiceDefaultStyle.getValue() == VoiceStyle.自定义) {
+                    voiceInputController.setStyle(resolveVoiceStyle())
+                }
+            }
+        })
+        prefs.voice.voicePrompt.registerOnChangeListener(object : ManagedPreference.OnChangeListener<String> {
+            @Keep
+            override fun onChange(key: String, value: String) {
+                voiceInputController.setPrompt(value)
+            }
+        })
+        prefs.voice.voiceSample.registerOnChangeListener(object : ManagedPreference.OnChangeListener<String> {
+            @Keep
+            override fun onChange(key: String, value: String) {
+                voiceInputController.setSample(value)
+            }
+        })
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             postFcitxJob {
                 SubtypeManager.syncWith(enabledIme())
@@ -759,6 +863,15 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         Timber.d("onStartInputView: restarting=$restarting")
+
+        // --- 语音输入：采集上次反馈 ---
+        val feedbackEvent = feedbackCollector.checkAndCollect(currentInputConnection)
+        if (feedbackEvent != null) {
+            lifecycleScope.launch {
+                feedbackUploader.uploadPending(feedbackRepository)
+            }
+        }
+
         postFcitxJob {
             focus(true)
         }
@@ -1041,6 +1154,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         postFcitxJob {
             focusOutIn()
         }
+
+        // --- 语音输入：兜底采集反馈 ---
+        feedbackCollector.forceCollect(currentInputConnection)
+
         hideStatusIcon()
         showingDialog?.dismiss()
     }
@@ -1071,6 +1188,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
         prefs.candidates.unregisterOnChangeListener(recreateCandidatesViewListener)
         ThemeManager.removeOnChangedListener(onThemeChangeListener)
+
+        // --- 语音输入：释放资源 ---
+        voiceInputController.destroy()
+
         super.onDestroy()
         // Fcitx might be used in super.onDestroy()
         FcitxDaemon.disconnect(javaClass.name)

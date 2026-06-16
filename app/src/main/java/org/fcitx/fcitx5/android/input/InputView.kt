@@ -38,6 +38,7 @@ import org.fcitx.fcitx5.android.input.picker.symbolPicker
 import org.fcitx.fcitx5.android.input.popup.PopupComponent
 import org.fcitx.fcitx5.android.input.preedit.PreeditComponent
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
+import org.fcitx.fcitx5.android.voice.domain.TranscribeState
 import org.fcitx.fcitx5.android.utils.unset
 import org.mechdancer.dependency.DynamicScope
 import org.mechdancer.dependency.manager.wrapToUniqueComponent
@@ -357,6 +358,10 @@ class InputView(
     @RequiresApi(Build.VERSION_CODES.R)
     fun handleInlineSuggestions(response: InlineSuggestionsResponse): Boolean {
         return kawaiiBar.handleInlineSuggestions(response)
+    }
+
+    fun onVoiceStateChanged(state: TranscribeState) {
+        kawaiiBar.onVoiceStateChanged(state)
     }
 
     override fun onDetachedFromWindow() {

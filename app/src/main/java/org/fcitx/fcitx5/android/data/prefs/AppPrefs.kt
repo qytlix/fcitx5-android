@@ -21,6 +21,7 @@ import org.fcitx.fcitx5.android.input.keyboard.SpaceLongPressBehavior
 import org.fcitx.fcitx5.android.input.keyboard.SwipeSymbolDirection
 import org.fcitx.fcitx5.android.input.picker.PickerWindow
 import org.fcitx.fcitx5.android.input.popup.EmojiModifier
+import org.fcitx.fcitx5.android.input.voice.VoiceStyle
 import org.fcitx.fcitx5.android.utils.DeviceUtil
 import org.fcitx.fcitx5.android.utils.appContext
 import org.fcitx.fcitx5.android.utils.vibrator
@@ -141,12 +142,6 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             "keep_keyboard_letters_uppercase",
             false
         )
-
-        val showVoiceInputButton =
-            switch(R.string.show_voice_input_button, "show_voice_input_button", false)
-        val preferredVoiceInput = voiceInputPreference(
-            R.string.preferred_voice_input, "preferred_voice_input", ""
-        ) { showVoiceInputButton.getValue() }
 
         val expandKeypressArea =
             switch(R.string.expand_keypress_area, "expand_keypress_area", false)
@@ -271,6 +266,30 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
 
     }
 
+    inner class Voice : ManagedPreferenceCategory(R.string.voice_input, sharedPreferences) {
+        val showVoiceInputButton =
+            switch(R.string.show_voice_input_button, "show_voice_input_button", false)
+        val preferredVoiceInput = voiceInputPreference(
+            R.string.preferred_voice_input, "preferred_voice_input", ""
+        ) { showVoiceInputButton.getValue() }
+
+        val voiceServerUrl = string(
+            R.string.voice_server_url, "voice_server_url", "http://localhost:8080"
+        ) { showVoiceInputButton.getValue() }
+        val voiceDefaultStyle = enumList(
+            R.string.voice_default_style, "voice_default_style", VoiceStyle.正式
+        ) { showVoiceInputButton.getValue() }
+        val voiceCustomStyle = string(
+            R.string.voice_custom_style, "voice_custom_style", ""
+        ) { showVoiceInputButton.getValue() && voiceDefaultStyle.getValue() == VoiceStyle.自定义 }
+        val voicePrompt = string(
+            R.string.voice_prompt, "voice_prompt", ""
+        ) { showVoiceInputButton.getValue() }
+        val voiceSample = string(
+            R.string.voice_sample, "voice_sample", ""
+        ) { showVoiceInputButton.getValue() }
+    }
+
     inner class Candidates :
         ManagedPreferenceCategory(R.string.candidates_window, sharedPreferences) {
         val mode = enumList(
@@ -381,6 +400,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
 
     val internal = Internal().register()
     val keyboard = Keyboard().register()
+    val voice = Voice().register()
     val candidates = Candidates().register()
     val clipboard = Clipboard().register()
     val symbols = Symbols().register()
@@ -411,6 +431,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             }
             listOf(
                 keyboard,
+                voice,
                 candidates,
                 clipboard
             ).forEach { category ->

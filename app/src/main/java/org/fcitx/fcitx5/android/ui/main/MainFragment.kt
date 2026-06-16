@@ -59,6 +59,13 @@ class MainFragment : PaddingPreferenceFragment() {
                     SettingsRoute.AddonList
                 )
             }
+            addCategory("Voice Input") {
+                addDestinationPreference(
+                    R.string.voice_input,
+                    R.drawable.ic_baseline_keyboard_voice_24,
+                    SettingsRoute.VoiceInput
+                )
+            }
             addCategory("Android") {
                 addDestinationPreference(
                     R.string.theme,

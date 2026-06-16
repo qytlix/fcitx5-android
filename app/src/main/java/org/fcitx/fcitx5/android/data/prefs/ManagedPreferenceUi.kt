@@ -126,6 +126,26 @@ abstract class ManagedPreferenceUi<T : Preference>(
         }
     }
 
+    class EditText(
+        @StringRes
+        val title: Int,
+        key: String,
+        val defaultValue: String,
+        enableUiOn: (() -> Boolean)? = null
+    ) : ManagedPreferenceUi<EditTextPreference>(key, enableUiOn) {
+        override fun createUi(context: Context) = EditTextPreference(context).apply {
+            key = this@EditText.key
+            isIconSpaceReserved = false
+            isSingleLineTitle = false
+            summaryProvider = Preference.SummaryProvider<EditTextPreference> { preference ->
+                preference.text ?: context.getString(R.string.system_default)
+            }
+            setDefaultValue(this@EditText.defaultValue)
+            setTitle(this@EditText.title)
+            setDialogTitle(this@EditText.title)
+        }
+    }
+
     class SeekBarInt(
         @StringRes
         val title: Int,

@@ -225,6 +225,7 @@
     <string name="main_program">main program</string>
     <string name="edit_theme">Edit Theme</string>
     <string name="show_voice_input_button">Show voice input button</string>
+    <string name="voice_input">Voice Input</string>
     <string name="fcitx_daemon">Fcitx Daemon</string>
     <string name="restarting_fcitx">Restarting Fcitx</string>
     <string name="plugin_needs_reload">Plugin changes detected, click here to reload</string>
@@ -317,5 +318,16 @@
     <string name="hide_unsupported_emojis">Hide unsupported Emojis</string>
     <string name="key_border_stroke">Enable stroke for key border</string>
     <string name="preferred_voice_input">Preferred voice input</string>
+    <string name="voice_server_url">Voice server URL</string>
+    <string name="voice_server_url_summary">Server address for voice transcription</string>
+    <string name="voice_default_style">Voice output style</string>
+    <string name="voice_custom_style">Custom style</string>
+    <string name="voice_prompt">Style prompt</string>
+    <string name="voice_sample">Style sample text</string>
+    <string name="voice_style_formal">Formal</string>
+    <string name="voice_style_concise">Concise</string>
+    <string name="voice_style_polite">Polite</string>
+    <string name="voice_style_translate_en">Translate to English</string>
+    <string name="voice_style_custom">Custom</string>
     <string name="edit_text_playground">EditText Playground</string>
 </resources>
