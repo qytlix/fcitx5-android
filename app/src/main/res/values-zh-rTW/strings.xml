@@ -316,4 +316,7 @@
     <string name="emoji_skin_tone_type_6">🏿 深膚色 (Type-6)</string>
     <string name="hide_unsupported_emojis">隱藏不支援的表情</string>
     <string name="preferred_voice_input">首選語音輸入</string>
+    <string name="voice_permission_title">需要麥克風權限</string>
+    <string name="voice_permission_message">語音輸入需要麥克風權限才能錄音，請在應用設定中授予權限。</string>
+    <string name="voice_permission_grant">開啟設定</string>
 </resources>

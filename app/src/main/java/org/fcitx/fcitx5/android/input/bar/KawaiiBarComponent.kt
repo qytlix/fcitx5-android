@@ -4,8 +4,14 @@
  */
 package org.fcitx.fcitx5.android.input.bar
 
+import android.Manifest
+import android.app.AlertDialog
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.util.Size
 import android.view.KeyEvent
 import android.view.View
@@ -19,6 +25,7 @@ import android.widget.ViewAnimator
 import android.widget.inline.InlineContentView
 import androidx.annotation.Keep
 import androidx.annotation.RequiresApi
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -285,14 +292,21 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         when (event.type) {
             GestureType.Down -> {
                 Timber.d("VoiceButton DOWN")
-                val feedbackEvent = service.feedbackCollector.checkAndCollect(service.currentInputConnection)
-                if (feedbackEvent != null) {
-                    service.lifecycleScope.launch {
-                        service.feedbackUploader.uploadPending(service.feedbackRepository)
+                // 检查录音权限
+                if (!hasRecordAudioPermission()) {
+                    Timber.w("VoiceButton: RECORD_AUDIO permission not granted")
+                    showRecordAudioPermissionDialog()
+                    true
+                } else {
+                    val feedbackEvent = service.feedbackCollector.checkAndCollect(service.currentInputConnection)
+                    if (feedbackEvent != null) {
+                        service.lifecycleScope.launch {
+                            service.feedbackUploader.uploadPending(service.feedbackRepository)
+                        }
                     }
+                    service.voiceInputController.startRecording()
+                    true
                 }
-                service.voiceInputController.startRecording()
-                true
             }
             GestureType.Up -> {
                 Timber.d("VoiceButton UP")
@@ -301,6 +315,29 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             }
             else -> false
         }
+    }
+
+    private fun hasRecordAudioPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun showRecordAudioPermissionDialog() {
+        val dialog = AlertDialog.Builder(context)
+            .setTitle(R.string.voice_permission_title)
+            .setMessage(R.string.voice_permission_message)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.voice_permission_grant) { _, _ ->
+                val intent = Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.fromParts("package", context.packageName, null)
+                ).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            }
+            .create()
+        service.showDialog(dialog)
     }
 
     private val idleUi: IdleUi by lazy {

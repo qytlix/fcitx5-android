@@ -317,4 +317,7 @@
     <string name="hide_unsupported_emojis">隐藏不支持的表情</string>
     <string name="key_border_stroke">启用按键边框描边</string>
     <string name="preferred_voice_input">首选语音输入</string>
+    <string name="voice_permission_title">需要麦克风权限</string>
+    <string name="voice_permission_message">语音输入需要麦克风权限才能录音，请在应用设置中授予权限。</string>
+    <string name="voice_permission_grant">打开设置</string>
 </resources>
