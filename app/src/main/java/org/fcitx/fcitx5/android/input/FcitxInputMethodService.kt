@@ -75,6 +75,7 @@ import org.fcitx.fcitx5.android.voice.domain.TranscribeState
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import org.fcitx.fcitx5.android.utils.alpha
 import org.fcitx.fcitx5.android.utils.forceShowSelf
+import org.fcitx.fcitx5.android.utils.toast
 import org.fcitx.fcitx5.android.utils.inputMethodManager
 import org.fcitx.fcitx5.android.utils.isTypeNull
 import org.fcitx.fcitx5.android.utils.monitorCursorAnchor
@@ -279,6 +280,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         // 设置错误监听
         voiceInputController.onError = { message ->
             Timber.w("VoiceInput error: $message")
+            toast(message)
         }
 
         // 设置状态变更监听（用于更新语音按钮 UI）
